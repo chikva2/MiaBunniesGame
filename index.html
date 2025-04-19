@@ -101,6 +101,23 @@
             object-fit: contain;
         }
         
+        #bonusStar {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 60px;
+            z-index: 6;
+            display: none;
+            animation: spin 2s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: translateX(-50%) rotate(0deg); }
+            100% { transform: translateX(-50%) rotate(360deg); }
+        }
+        
         #controls {
             position: absolute;
             bottom: 20px;
@@ -130,6 +147,8 @@
         <img id="nextItemPreview" src="" alt="Следующий предмет">
     </div>
     
+    <img id="bonusStar" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSJub25lIiBzdHJva2U9ImdvbGQiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWdvbiBwb2ludHM9IjEyIDIgMTUuMDkgOC4yNiAyMiA5LjI3IDE3IDE0LjE0IDE4LjE4IDIxLjAyIDEyIDE3Ljc3IDUuODIgMjEuMDIgNyAxNC4xNCAyIDkuMjcgOC45MSA4LjI2IDEyIDIiIGZpbGw9ImdvbGQiLz48L3N2Zz4=" alt="Bonus Star">
+    
     <canvas id="gameCanvas"></canvas>
     
     <div id="controls">
@@ -143,6 +162,7 @@
             Помогите кроликам собрать правильную еду!<br>
             Черная крольчиха любит овощи.<br>
             Рыжий кролик любит фрукты.<br>
+            Золотая клубника автоматически ловит 3 следующих предмета!<br>
             Нажимайте стрелки для перемещения падающих предметов.
         </p>
         <button id="startButton">Начать игру</button>
@@ -169,7 +189,9 @@
         const nextItemPreview = document.getElementById('nextItemPreview');
         
         // Audio setup
-        const crunchSound = new Audio('https://www.orangefreesounds.com/wp-content/uploads/2019/02/Potato-chip-crunch-single-bite.mp3');
+        const crunchSound = new Audio('crunch.mp3');
+        const failureSound = new Audio('wrong.mp3');
+        const bonusSound = new Audio('bonus.mp3');
         
         // Set canvas size
         function resizeCanvas() {
@@ -320,7 +342,20 @@
             }
         }
         
+        // Function to update the bonus star visibility
+        function updateBonusStar() {
+            const bonusStar = document.getElementById('bonusStar');
+            if (autoMoveCount > 0) {
+                bonusStar.style.display = 'block';
+            } else {
+                bonusStar.style.display = 'none';
+            }
+        }
+        
         function updateItems() {
+            // Update bonus star visibility
+            updateBonusStar();
+            
             // Create new items only when there are none
             const currentTime = Date.now();
             if (items.length === 0 && currentTime - lastDropTime > dropInterval) {
@@ -350,8 +385,9 @@
                             // Gold strawberry bonus - activate auto-catch for next 3 items
                             autoMoveCount = 3;
                             score += 10;
-                            crunchSound.currentTime = 0;
-                            crunchSound.play();
+                            // Play bonus sound
+                            bonusSound.currentTime = 0;
+                            bonusSound.play();
                             items.splice(i, 1);
                             activeItemIndex = -1;
                             continue;
@@ -370,6 +406,11 @@
                             items.splice(i, 1);
                             activeItemIndex = -1; // No active item
                             continue;
+                        } else {
+                            // Wrong item for black rabbit (fruit)
+                            // Play failure sound
+                            failureSound.currentTime = 0;
+                            failureSound.play();
                         }
                     }
                     
@@ -381,8 +422,9 @@
                             // Gold strawberry bonus - activate auto-catch for next 3 items
                             autoMoveCount = 3;
                             score += 10;
-                            crunchSound.currentTime = 0;
-                            crunchSound.play();
+                            // Play bonus sound
+                            bonusSound.currentTime = 0;
+                            bonusSound.play();
                             items.splice(i, 1);
                             activeItemIndex = -1;
                             continue;
@@ -401,6 +443,11 @@
                             items.splice(i, 1);
                             activeItemIndex = -1; // No active item
                             continue;
+                        } else {
+                            // Wrong item for orange rabbit (vegetable)
+                            // Play failure sound
+                            failureSound.currentTime = 0;
+                            failureSound.play();
                         }
                     }
                 }
@@ -510,13 +557,30 @@
                 // Highlight active item with a glowing effect
                 if (index === activeItemIndex) {
                     ctx.save();
-                    ctx.shadowColor = item.isFruit ? 'orange' : 'green';
-                    ctx.shadowBlur = 10;
+                    
+                    if (item.isSpecial) {
+                        // Gold strawberry gets a special golden glow
+                        ctx.shadowColor = 'gold';
+                        ctx.shadowBlur = 15;
+                    } else {
+                        ctx.shadowColor = item.isFruit ? 'orange' : 'green';
+                        ctx.shadowBlur = 10;
+                    }
                 }
                 
                 ctx.drawImage(item.image, item.x, item.y, item.width, item.height);
                 
                 if (index === activeItemIndex) {
+                    ctx.restore();
+                }
+                
+                // If power-up is active, show visual indicator
+                if (autoMoveCount > 0 && !item.isSpecial) {
+                    ctx.save();
+                    ctx.strokeStyle = 'gold';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeRect(item.x - 5, item.y - 5, item.width + 10, item.height + 10);
                     ctx.restore();
                 }
             });
@@ -539,9 +603,14 @@
         function startGame() {
             gameActive = true;
             score = 0;
+            level = 1;
+            speed = 1.5;
+            dropInterval = 1500;
             items.length = 0;
             activeItemIndex = -1;
             lastDropTime = Date.now();
+            goldStrawberrySpawned = false;
+            autoMoveCount = 0;
             
             // Generate the first next item
             generateNextItem();
@@ -686,6 +755,8 @@
         // Preload sound
         function preloadSound() {
             crunchSound.load();
+            failureSound.load();
+            bonusSound.load();
         }
         
         // Initialize game
