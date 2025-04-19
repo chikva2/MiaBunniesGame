@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Кроличья Игра</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            touch-action: none;
+        }
+        
+        #gameCanvas {
+            display: block;
+            background-color: #e6f7ff;
+        }
+        
+        #startScreen, #levelScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 10;
+        }
+        
+        #levelScreen {
+            display: none;
+        }
+        
+        #startButton, #nextLevelButton {
+            padding: 15px 30px;
+            background-color: #4CAF50;
+            color: white;
+            font-size: 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        h1 {
+            color: white;
+            font-size: 32px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        p {
+            color: white;
+            text-align: center;
+            padding: 0 20px;
+            margin-bottom: 20px;
+        }
+        
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 5;
+        }
+        
+        #nextItemContainer {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 5;
+        }
+        
+        #nextItemText {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        #nextItemPreview {
+            width: 50px;
+            height: 50px;
+            object-fit: contain;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            z-index: 5;
+        }
+        
+        .controlButton {
+            width: 80px;
+            height: 80px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div id="score">Очки: 0</div>
+    
+    <div id="nextItemContainer">
+        <div id="nextItemText">Следующий:</div>
+        <img id="nextItemPreview" src="" alt="Следующий предмет">
+    </div>
+    
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="controls">
+        <div id="leftButton" class="controlButton">←</div>
+        <div id="rightButton" class="controlButton">→</div>
+    </div>
+    
+    <div id="startScreen">
+        <h1>Кроличья Игра</h1>
+        <p>
+            Помогите кроликам собрать правильную еду!<br>
+            Черная крольчиха любит овощи.<br>
+            Рыжий кролик любит фрукты.<br>
+            Нажимайте стрелки для перемещения падающих предметов.
+        </p>
+        <button id="startButton">Начать игру</button>
+    </div>
+    
+    <div id="levelScreen">
+        <h1>Уровень пройден!</h1>
+        <p id="levelText">Уровень 2</p>
+        <button id="nextLevelButton">Следующий уровень</button>
+    </div>
+
+    <script>
+        // Game setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const startScreen = document.getElementById('startScreen');
+        const levelScreen = document.getElementById('levelScreen');
+        const startButton = document.getElementById('startButton');
+        const nextLevelButton = document.getElementById('nextLevelButton');
+        const levelText = document.getElementById('levelText');
+        const leftButton = document.getElementById('leftButton');
+        const rightButton = document.getElementById('rightButton');
+        const nextItemPreview = document.getElementById('nextItemPreview');
+        
+        // Audio setup
+        const crunchSound = new Audio('https://www.orangefreesounds.com/wp-content/uploads/2019/02/Potato-chip-crunch-single-bite.mp3');
+        
+        // Set canvas size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Game variables
+        let gameActive = false;
+        let score = 0;
+        let level = 1;
+        let speed = 1.5; // Reduced speed for slower falling
+        let dropInterval = 1500;
+        let lastDropTime = 0;
+        
+        // Rabbits - now fixed positions
+        const rabbitWidth = canvas.width / 5;
+        const rabbitHeight = rabbitWidth * 1.2;
+        const blackRabbitX = canvas.width / 4 - rabbitWidth / 2;
+        const orangeRabbitX = (canvas.width * 3) / 4 - rabbitWidth / 2;
+        const rabbitY = canvas.height - rabbitHeight - 20;
+        const tableHeight = 20;
+        
+        // Food items
+        const items = [];
+        const itemSize = canvas.width / 10;
+        let activeItemIndex = -1; // Track which item is being controlled
+        
+        // Next item preview
+        let nextItem = null;
+        
+        // Load background images
+        const backgroundImg = new Image();
+        backgroundImg.src = 'background.png';
+        
+        const smartphoneBackgroundImg = new Image();
+        smartphoneBackgroundImg.src = 'smartphone_background.png';
+        
+        // Determine which background to use based on device size
+        let currentBackground = window.innerWidth <= 768 ? smartphoneBackgroundImg : backgroundImg;
+        
+        // Update background on resize
+        window.addEventListener('resize', function() {
+            currentBackground = window.innerWidth <= 768 ? smartphoneBackgroundImg : backgroundImg;
+        });
+        
+        // With image loading code like this:
+        const blackRabbitImg = new Image();
+        blackRabbitImg.src = 'images/black_bunny.png';
+
+        const orangeRabbitImg = new Image();
+        orangeRabbitImg.src = 'images/orange_bunny.png';
+
+        const fruitImages = [];
+        ['apple.png', 'banana.png', 'orange.png'].forEach(fruit => {
+            const img = new Image();
+            img.src = `images/${fruit}`;
+            fruitImages.push(img);
+        });
+
+        const vegetableImages = [];
+        ['carrot.png', 'broccoli.png', 'eggplant.png'].forEach(veg => {
+            const img = new Image();
+            img.src = `images/${veg}`;
+            vegetableImages.push(img);
+        });
+        
+        // Generate the next item preview
+        function generateNextItem() {
+            const isFruit = Math.random() < 0.5;
+            const images = isFruit ? fruitImages : vegetableImages;
+            const image = images[Math.floor(Math.random() * images.length)];
+            
+            nextItem = {
+                isFruit: isFruit,
+                image: image
+            };
+            
+            // Update the preview image
+            nextItemPreview.src = image.src;
+        }
+        
+        // Game functions
+        function createItem() {
+            // Only create a new item if there are none
+            if (items.length === 0) {
+                // If we don't have a next item yet, generate one
+                if (!nextItem) {
+                    generateNextItem();
+                }
+                
+                // Position in the middle of the screen
+                const item = {
+                    x: (canvas.width / 2) - (itemSize / 2),
+                    y: -itemSize,
+                    width: itemSize,
+                    height: itemSize,
+                    speed: speed,
+                    isFruit: nextItem.isFruit,
+                    image: nextItem.image,
+                    active: true // This item is active for control
+                };
+                
+                items.push(item);
+                activeItemIndex = 0; // Set this as the active item
+                
+                // Generate the next item for preview
+                generateNextItem();
+            }
+        }
+        
+        function updateItems() {
+            // Create new items only when there are none
+            const currentTime = Date.now();
+            if (items.length === 0 && currentTime - lastDropTime > dropInterval) {
+                createItem();
+                lastDropTime = currentTime;
+            }
+            
+            // Update and check items
+            for (let i = items.length - 1; i >= 0; i--) {
+                const item = items[i];
+                
+                // Move item down
+                item.y += item.speed;
+                
+                // Check if item is at rabbit level
+                if (item.y + item.height >= rabbitY && item.y <= rabbitY + rabbitHeight) {
+                    // Check black rabbit collision (vegetables)
+                    if (item.x + item.width >= blackRabbitX && 
+                        item.x <= blackRabbitX + rabbitWidth) {
+                        if (!item.isFruit) { // Black rabbit catches vegetable
+                            score += 5;
+                            // Play crunch sound
+                            crunchSound.currentTime = 0;
+                            crunchSound.play();
+                            items.splice(i, 1);
+                            activeItemIndex = -1; // No active item
+                            continue;
+                        }
+                    }
+                    
+                    // Check orange rabbit collision (fruits)
+                    if (item.x + item.width >= orangeRabbitX && 
+                        item.x <= orangeRabbitX + rabbitWidth) {
+                        if (item.isFruit) { // Orange rabbit catches fruit
+                            score += 5;
+                            // Play crunch sound
+                            crunchSound.currentTime = 0;
+                            crunchSound.play();
+                            items.splice(i, 1);
+                            activeItemIndex = -1; // No active item
+                            continue;
+                        }
+                    }
+                }
+                
+                // Remove items that fall off screen
+                if (item.y > canvas.height) {
+                    items.splice(i, 1);
+                    activeItemIndex = -1; // No active item
+                }
+            }
+            
+            // Update score
+            scoreElement.textContent = `Очки: ${score}`;
+            
+            // Check if level completed
+            if (score >= level * 100) {
+                levelUp();
+            }
+        }
+        
+        function levelUp() {
+            gameActive = false;
+            level++;
+            
+            // Update level screen
+            levelText.textContent = `Уровень ${level}`;
+            levelScreen.style.display = 'flex';
+            
+            // Increase difficulty (but keep it slower than original)
+            speed += 0.5;
+            dropInterval = Math.max(500, dropInterval - 200);
+            
+            // Clear items
+            items.length = 0;
+            activeItemIndex = -1;
+        }
+        
+        // Drawing functions
+        function drawGame() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background
+            try {
+                // Use pattern to avoid stretching if image is loaded
+                if (currentBackground.complete && currentBackground.naturalHeight !== 0) {
+                    // For large screens, cover the canvas
+                    if (window.innerWidth > 768) {
+                        // Draw background to fit canvas while maintaining aspect ratio
+                        const imgRatio = currentBackground.naturalWidth / currentBackground.naturalHeight;
+                        const canvasRatio = canvas.width / canvas.height;
+                        
+                        let drawWidth, drawHeight, offsetX, offsetY;
+                        
+                        if (canvasRatio > imgRatio) {
+                            // Canvas is wider than image ratio
+                            drawWidth = canvas.width;
+                            drawHeight = canvas.width / imgRatio;
+                            offsetX = 0;
+                            offsetY = (canvas.height - drawHeight) / 2;
+                        } else {
+                            // Canvas is taller than image ratio
+                            drawHeight = canvas.height;
+                            drawWidth = canvas.height * imgRatio;
+                            offsetX = (canvas.width - drawWidth) / 2;
+                            offsetY = 0;
+                        }
+                        
+                        ctx.drawImage(currentBackground, offsetX, offsetY, drawWidth, drawHeight);
+                    } else {
+                        // For mobile, use a pattern approach for smaller screens
+                        const pattern = ctx.createPattern(currentBackground, 'repeat');
+                        ctx.fillStyle = pattern;
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    }
+                } else {
+                    // Fallback if image isn't loaded
+                    ctx.fillStyle = '#e6f7ff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+            } catch (e) {
+                console.error('Error drawing background:', e);
+                // Fallback
+                ctx.fillStyle = '#e6f7ff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Draw table
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(0, rabbitY + rabbitHeight, canvas.width, tableHeight);
+            
+            // Draw rabbits
+            ctx.drawImage(blackRabbitImg, blackRabbitX, rabbitY, rabbitWidth, rabbitHeight);
+            ctx.drawImage(orangeRabbitImg, orangeRabbitX, rabbitY, rabbitWidth, rabbitHeight);
+            
+            // Draw items
+            items.forEach((item, index) => {
+                // Highlight active item with a glowing effect
+                if (index === activeItemIndex) {
+                    ctx.save();
+                    ctx.shadowColor = item.isFruit ? 'orange' : 'green';
+                    ctx.shadowBlur = 10;
+                }
+                
+                ctx.drawImage(item.image, item.x, item.y, item.width, item.height);
+                
+                if (index === activeItemIndex) {
+                    ctx.restore();
+                }
+            });
+        }
+        
+        // Game loop
+        function gameLoop() {
+            if (gameActive) {
+                updateItems();
+                drawGame();
+            } else {
+                // Still draw the background and rabbits even when not active
+                drawGame();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Event handlers
+        function startGame() {
+            gameActive = true;
+            score = 0;
+            items.length = 0;
+            activeItemIndex = -1;
+            lastDropTime = Date.now();
+            
+            // Generate the first next item
+            generateNextItem();
+            
+            startScreen.style.display = 'none';
+        }
+        
+        function startNextLevel() {
+            gameActive = true;
+            levelScreen.style.display = 'none';
+        }
+        
+        // Set up controls
+        function setupControls() {
+            const step = 15;
+            
+            // Left button controls (move active item left)
+            leftButton.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                if (!gameActive || activeItemIndex === -1) return;
+                
+                const item = items[activeItemIndex];
+                if (item && item.x > 0) {
+                    item.x -= step;
+                }
+            });
+            
+            // Right button controls (move active item right)
+            rightButton.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                if (!gameActive || activeItemIndex === -1) return;
+                
+                const item = items[activeItemIndex];
+                if (item && item.x + item.width < canvas.width) {
+                    item.x += step;
+                }
+            });
+            
+            // Keyboard controls
+            document.addEventListener('keydown', function(e) {
+                if (!gameActive || activeItemIndex === -1) return;
+                
+                const item = items[activeItemIndex];
+                if (!item) return;
+                
+                if (e.key === 'ArrowLeft' && item.x > 0) {
+                    item.x -= step;
+                } else if (e.key === 'ArrowRight' && item.x + item.width < canvas.width) {
+                    item.x += step;
+                }
+            });
+            
+            // Touch controls for the whole screen
+            canvas.addEventListener('touchstart', function(e) {
+                if (!gameActive || activeItemIndex === -1) return;
+                
+                const item = items[activeItemIndex];
+                if (!item) return;
+                
+                const touch = e.touches[0];
+                const canvasRect = canvas.getBoundingClientRect();
+                const touchX = touch.clientX - canvasRect.left;
+                
+                // Move toward touch position
+                const itemCenterX = item.x + (item.width / 2);
+                if (touchX < itemCenterX) {
+                    item.x -= step;
+                } else if (touchX > itemCenterX) {
+                    item.x += step;
+                }
+                
+                e.preventDefault();
+            });
+        }
+        
+        // Make controls continuously respond when held
+        function setupContinuousControls() {
+            let leftPressed = false;
+            let rightPressed = false;
+            const step = 5;
+            
+            // Handle continuous control
+            function handleControls() {
+                if (!gameActive || activeItemIndex === -1) return;
+                
+                const item = items[activeItemIndex];
+                if (!item) return;
+                
+                if (leftPressed && item.x > 0) {
+                    item.x -= step;
+                }
+                
+                if (rightPressed && item.x + item.width < canvas.width) {
+                    item.x += step;
+                }
+                
+                requestAnimationFrame(handleControls);
+            }
+            
+            // Start handling controls
+            handleControls();
+            
+            // Touch controls
+            leftButton.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                leftPressed = true;
+            });
+            
+            leftButton.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                leftPressed = false;
+            });
+            
+            rightButton.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                rightPressed = true;
+            });
+            
+            rightButton.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                rightPressed = false;
+            });
+            
+            // Keyboard controls
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'ArrowLeft') {
+                    leftPressed = true;
+                } else if (e.key === 'ArrowRight') {
+                    rightPressed = true;
+                }
+            });
+            
+            document.addEventListener('keyup', function(e) {
+                if (e.key === 'ArrowLeft') {
+                    leftPressed = false;
+                } else if (e.key === 'ArrowRight') {
+                    rightPressed = false;
+                }
+            });
+        }
+        
+        // Preload sound
+        function preloadSound() {
+            crunchSound.load();
+        }
+        
+        // Initialize game
+        function init() {
+            // Preload sound
+            preloadSound();
+            
+            // Add event listeners to buttons
+            startButton.addEventListener('click', startGame);
+            startButton.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                startGame();
+            });
+            
+            nextLevelButton.addEventListener('click', startNextLevel);
+            nextLevelButton.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                startNextLevel();
+            });
+            
+            // Set up controls
+            setupControls();
+            setupContinuousControls();
+            
+            // Start game loop
+            gameLoop();
+        }
+        
+        // Start the game when the page is loaded
+        window.onload = init;
+    </script>
+</body>
+</html>
