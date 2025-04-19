@@ -187,6 +187,8 @@
         let speed = 1.5; // Reduced speed for slower falling
         let dropInterval = 1500;
         let lastDropTime = 0;
+        let goldStrawberrySpawned = false;
+        let autoMoveCount = 0; // Number of items to auto-catch
         
         // Rabbits - now fixed positions
         const rabbitWidth = canvas.width / 5;
@@ -240,19 +242,34 @@
             vegetableImages.push(img);
         });
         
+        // Special gold strawberry
+        const goldStrawberryImg = new Image();
+        goldStrawberryImg.src = 'images/gold_strawberry.png';
+        
         // Generate the next item preview
         function generateNextItem() {
-            const isFruit = Math.random() < 0.5;
-            const images = isFruit ? fruitImages : vegetableImages;
-            const image = images[Math.floor(Math.random() * images.length)];
-            
-            nextItem = {
-                isFruit: isFruit,
-                image: image
-            };
+            // Check if we should spawn a gold strawberry (once per level and not already spawned)
+            if (!goldStrawberrySpawned && Math.random() < 0.2) {
+                nextItem = {
+                    isSpecial: true,
+                    isFruit: true, // Treat as fruit for collection purposes
+                    image: goldStrawberryImg
+                };
+                goldStrawberrySpawned = true;
+            } else {
+                const isFruit = Math.random() < 0.5;
+                const images = isFruit ? fruitImages : vegetableImages;
+                const image = images[Math.floor(Math.random() * images.length)];
+                
+                nextItem = {
+                    isSpecial: false,
+                    isFruit: isFruit,
+                    image: image
+                };
+            }
             
             // Update the preview image
-            nextItemPreview.src = image.src;
+            nextItemPreview.src = nextItem.image.src;
         }
         
         // Game functions
@@ -272,6 +289,7 @@
                     height: itemSize,
                     speed: speed,
                     isFruit: nextItem.isFruit,
+                    isSpecial: nextItem.isSpecial || false,
                     image: nextItem.image,
                     active: true // This item is active for control
                 };
@@ -281,6 +299,24 @@
                 
                 // Generate the next item for preview
                 generateNextItem();
+            }
+        }
+        
+        // Helper function for auto-move rabbits to catch items
+        function moveRabbitsToItem(item) {
+            const targetX = item.isFruit ? 
+                orangeRabbitX + (rabbitWidth / 2) - (item.width / 2) : 
+                blackRabbitX + (rabbitWidth / 2) - (item.width / 2);
+            
+            // Move item horizontally to be above the correct rabbit
+            if (Math.abs(item.x - targetX) > 5) {
+                if (item.x < targetX) {
+                    item.x += 5;
+                } else {
+                    item.x -= 5;
+                }
+            } else {
+                item.x = targetX;
             }
         }
         
@@ -299,16 +335,38 @@
                 // Move item down
                 item.y += item.speed;
                 
+                // Auto-move the item if power-up is active
+                if (autoMoveCount > 0 && !item.isSpecial) {
+                    moveRabbitsToItem(item);
+                }
+                
                 // Check if item is at rabbit level
                 if (item.y + item.height >= rabbitY && item.y <= rabbitY + rabbitHeight) {
                     // Check black rabbit collision (vegetables)
                     if (item.x + item.width >= blackRabbitX && 
                         item.x <= blackRabbitX + rabbitWidth) {
-                        if (!item.isFruit) { // Black rabbit catches vegetable
+                        
+                        if (item.isSpecial) {
+                            // Gold strawberry bonus - activate auto-catch for next 3 items
+                            autoMoveCount = 3;
+                            score += 10;
+                            crunchSound.currentTime = 0;
+                            crunchSound.play();
+                            items.splice(i, 1);
+                            activeItemIndex = -1;
+                            continue;
+                        }
+                        else if (!item.isFruit) { // Black rabbit catches vegetable
                             score += 5;
                             // Play crunch sound
                             crunchSound.currentTime = 0;
                             crunchSound.play();
+                            
+                            // Decrease auto-move count if it was used
+                            if (autoMoveCount > 0) {
+                                autoMoveCount--;
+                            }
+                            
                             items.splice(i, 1);
                             activeItemIndex = -1; // No active item
                             continue;
@@ -318,11 +376,28 @@
                     // Check orange rabbit collision (fruits)
                     if (item.x + item.width >= orangeRabbitX && 
                         item.x <= orangeRabbitX + rabbitWidth) {
-                        if (item.isFruit) { // Orange rabbit catches fruit
+                        
+                        if (item.isSpecial) {
+                            // Gold strawberry bonus - activate auto-catch for next 3 items
+                            autoMoveCount = 3;
+                            score += 10;
+                            crunchSound.currentTime = 0;
+                            crunchSound.play();
+                            items.splice(i, 1);
+                            activeItemIndex = -1;
+                            continue;
+                        }
+                        else if (item.isFruit) { // Orange rabbit catches fruit
                             score += 5;
                             // Play crunch sound
                             crunchSound.currentTime = 0;
                             crunchSound.play();
+                            
+                            // Decrease auto-move count if it was used
+                            if (autoMoveCount > 0) {
+                                autoMoveCount--;
+                            }
+                            
                             items.splice(i, 1);
                             activeItemIndex = -1; // No active item
                             continue;
@@ -334,6 +409,11 @@
                 if (item.y > canvas.height) {
                     items.splice(i, 1);
                     activeItemIndex = -1; // No active item
+                    
+                    // If this was using auto-catch, decrease the counter
+                    if (autoMoveCount > 0) {
+                        autoMoveCount--;
+                    }
                 }
             }
             
@@ -361,6 +441,10 @@
             // Clear items
             items.length = 0;
             activeItemIndex = -1;
+            
+            // Reset gold strawberry for the new level
+            goldStrawberrySpawned = false;
+            autoMoveCount = 0;
         }
         
         // Drawing functions
